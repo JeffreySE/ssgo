@@ -134,6 +134,7 @@ func main() {
 					if err != nil {
 						utils.ColorPrint("ERROR", "", "ERROR:", err, "\n")
 					}
+					utils.ColorPrint("INFO", ">>> Group Name: ", "["+s.Name()+"]\n")
 					if *scriptFile != "" {
 						doSSHCommands(userName, password, "", port, hosts, []string{}, *scriptFile, *scriptArgs, "script")
 						return
