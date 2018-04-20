@@ -1,0 +1,9 @@
+echo -e "***************************************"
+hostname
+ssh -V
+df -Th
+cd /opt/
+ls -l
+cat /etc/rsyslog.conf  | grep "#kern.*"
+cat /etc/passwd | awk -F ':' '{print $1}'
+echo -e "***************************************"
