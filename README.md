@@ -81,7 +81,8 @@ Commands:
 **config.ini文件**
 ``` bash
 # ssgo tools use ini config file for advanced usage
-# Important Tips： you can't use 'all' as a host group name, cause 'all' will be identified as all host in your config.ini file.
+# Important Tips： you can't use 'all' as a host group name, 
+# cause 'all' will be identified as all host in your config.ini file.
 
 [dc]
 user = root
@@ -162,7 +163,7 @@ Cost Time: 128.218018ms
 Total Hosts Running: 1(Success) + 0(Failed) = 1(Total)
 ```
 
-**`ssgo run --host-list` 多个主机 执行单个命令，以表格样式输出结果**
+**`ssgo run --host-list` 多个主机 执行单个命令，以表格样式输出结果**   
 **备注** ： -F, --format 格式化命令执行后的输出结果
 ``` bash
 ➜ ./ssgo run --host-list 192.168.100.1,192.168.100.2-4 -u root -p root -c "hostname" -F table
@@ -217,8 +218,8 @@ Tips: Process running done.
 End Time: 2018-04-20 17:17:34
 Cost Time: 301.24909ms
 Total Hosts Running: 4(Success) + 0(Failed) = 4(Total)
-
 ```
+
 ##### 8.1.2.` --host-file` 参数相关
 **备注**：`--host-file` 参数只需指定一个主机清单文件即可，表格样式会比较容易比对输出结果，对吧
 
@@ -254,7 +255,7 @@ Cost Time: 172.372373ms
 Total Hosts Running: 9(Success) + 0(Failed) = 9(Total)
 ```
 
-##### 8.1.2. `-i, --inventory`和 `-g, --group`参数相关
+##### 8.1.3. `-i, --inventory`和 `-g, --group`参数相关
 **备注**：`-i, --inventory`和 `-g, --group`参数需要组合使用，`-i`指定config.ini主机仓库文件，`-g`指定主机组名称，如果是`-g`的参数为`all`,则该主机仓库中所有的主机会被识别，用来执行操作
 ``` bash
 ➜ ./ssgo run -i config.ini -g docker -c "date" -F table
