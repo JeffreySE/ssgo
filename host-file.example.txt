@@ -1,4 +1,4 @@
 192.168.100.1,192.168.100.2-192.168.100.4
-#192.168.100.5 #this host will be ignored!
+#192.168.100.5 #host-list strings with "#" prefix will be ignored!
 192.168.100.6
 192.168.100.7-10
