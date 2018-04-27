@@ -8,7 +8,7 @@ import "sync"
 type Pool struct {
 	queue chan int
 	Wg    *sync.WaitGroup
-	Size  int				// pool size
+	Size  int // pool size
 }
 
 func NewPool(cap, total int) *Pool {
@@ -25,10 +25,10 @@ func NewPool(cap, total int) *Pool {
 }
 func (p *Pool) AddOne() {
 	p.queue <- 1
-	p.Size ++
+	p.Size++
 }
 func (p *Pool) DelOne() {
 	<-p.queue
 	p.Wg.Done()
-	p.Size --
+	p.Size--
 }
