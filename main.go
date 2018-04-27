@@ -2,46 +2,52 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"strings"
-	"time"
 	"github.com/JeffreySE/ssgo/utils"
 	"github.com/go-ini/ini"
 	"gopkg.in/alecthomas/kingpin.v2"
+	"os"
+	"strings"
+	"time"
 )
 
 var (
-	help              = app.HelpFlag.Short('h')
-	app               = kingpin.New("ssgo", "A SSH-based command line tool for operating remote hosts.")
-	example           = app.Flag("example", "Show examples of ssgo command.").Short('e').Default("false").Bool()
-	inventory         = app.Flag("inventory", "For advanced use case, you can define a host warehouse .ini file (Default is 'config.ini' file in current directory.)").Short('i').ExistingFile()
-	group             = app.Flag("group", "Remote host group name in the inventory file, which must be used with '-i' or '--inventory' argument!").Short('g').String()
-	hostFile          = app.Flag("host-file", "A file contains remote host or host range IP Address.(e.g. 'hosts.example.txt' in current directory.)").ExistingFile()
-	hostList          = app.Flag("host-list", "Remote host or host range IP Address. e.g. 192.168.10.100,192.168.10.101-192.168.10.103,192.168.20.100/28,192.168.30.11-15").String()
-	password          = app.Flag("pass", "The SSH login password for remote hosts.").Short('p').String()
-	user              = app.Flag("user", "The SSH login user for remote hosts. default is 'root'").Short('u').Default("root").String()
-	port              = app.Flag("port", "The SSH login port for remote hosts. default is '22'").Short('P').Default("22").Int()
+	app       = kingpin.New("ssgo", "A SSH-based command line tool for operating remote hosts.")
+	_         = app.HelpFlag.Short('h')
+	example   = app.Flag("example", "Show examples of ssgo's command.").Short('e').Default("false").Bool()
+	inventory = app.Flag("inventory", "For advanced use case, you can specify a host warehouse .ini file (Default is 'config.ini' file in current directory.)").Short('i').ExistingFile()
+	group     = app.Flag("group", "Remote host group name in the inventory file, which must be used with '-i' or '--inventory' argument!").Short('g').String()
+	hostFile  = app.Flag("host-file", "A file contains remote host or host range IP Address.(e.g. 'hosts.example.txt' in current directory.)").ExistingFile()
+	hostList  = app.Flag("host-list", "Remote host or host range IP Address. e.g. 192.168.10.100,192.168.10.101-192.168.10.103,192.168.20.100/28,192.168.30.11-15").String()
+	password  = app.Flag("pass", "The SSH login password for remote hosts.").Short('p').String()
+	user      = app.Flag("user", "The SSH login user for remote hosts. default is 'root'").Short('u').Default("root").String()
+	port      = app.Flag("port", "The SSH login port for remote hosts. default is '22'").Short('P').Default("22").Int()
 	//timeout           = app.Flag("timeout", "Set ssh connection timeout.").Short('t').Default("10s").Duration()
-	maxExecuteNum     = app.Flag("maxExecuteNum", "Set Maximum number of hosts concurrent amount.").Short('n').Default("20").Int()
-	formatResult      = app.Flag("format", "For pretty look in terminal,you can format the result with table,simple or other style.(Default is simple)").Short('F').Default("simple").String()
+	maxExecuteNum     = app.Flag("maxExecuteNum", "Set Maximum concurrent count of hosts.").Short('n').Default("20").Int()
+	output            = app.Flag("output", "Output result'log to a file.(Be default if your input is \"log\",ssgo will output logs like \"ssgo-%s.log\")").Short('o').String()
+	formatMode        = app.Flag("format", "For pretty look in terminal,you can format the result with table,simple,json or other style.(Default is simple)").Short('F').Default("simple").String()
+	jsonRaw           = app.Flag("json-raw", "By default, the json data will be formatted and output by the console. You can specify the --json-raw parameter to output raw json data.(Default is false)").Default("false").Bool()
 	maxTableCellWidth = app.Flag("maxTableCellWidth", "For pretty look,you can set the printed table's max cell width in terminal.(Default is 40)").Short('w').Default("40").Int()
 
 	list = app.Command("list", "List available remote hosts from your input. ")
 
-	run       = app.Command("run", "Run commands on remote hosts.")
-	scriptFile = run.Flag("script", "Want execute script on remote hosts ? Just define the path of your script.").ExistingFile()
-	scriptArgs = run.Flag("args", "Shell script arguments,use this flag with --script if you need.").Default("").String()
-	cmdArgs    = run.Flag("cmds", "Define the commands or command file you want execute on remote hosts. By default will run 'echo pong' command if nothing is defined!").Short('c').Default("").String()
+	run        = app.Command("run", "Run commands on remote hosts.")
+	scriptFile = run.Flag("script", "Want execute script on remote hosts ? Just specify the path of your script.").PlaceHolder("shell-script.sh").Short('s').ExistingFile()
+	scriptArgs = run.Flag("args", "Shell script arguments,use this flag with --script if you need.").Short('a').Default("").String()
+	cmdArgs    = run.Flag("cmd", "Specify the commands or command file you want execute on remote hosts. By default will run 'echo pong' command if nothing is specified!").Short('c').Default("").String()
 
-	sshCopy        = app.Command("copy", "Transfer files between local machine and remote hosts.")
-	copyAction = sshCopy.Flag("action", "ssgo copy command do upload or download operations(only accept \"upload\" or \"download\" action)").Required().Short('a').String()
-	sourcePath = sshCopy.Flag("src", "Source file or directory path on the local machine or remote hosts").Short('s').Required().String()
+	sshCopy         = app.Command("copy", "Transfer files between local machine and remote hosts.")
+	copyAction      = sshCopy.Flag("action", "ssgo's copy command do upload or download operations(only accept \"upload\" or \"download\" action)").Required().Short('a').String()
+	sourcePath      = sshCopy.Flag("src", "Source file or directory path on the local machine or remote hosts").Short('s').Required().String()
 	destinationPath = sshCopy.Flag("dst", "Destination file or directory path on the remote host or local machine.").Short('d').Default("").String()
+)
 
+var (
+	allResultLogs []utils.ResultLogs
 )
 
 func main() {
-	kingpin.Version("1.0.1")
+	app.Version("1.0.1")
+	app.VersionFlag.Short('v')
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case list.FullCommand():
 		if *example != false {
@@ -92,39 +98,53 @@ func main() {
 			}
 			if *group == "all" {
 				//get all hosts in config.ini file
-				for _, s := range cfg.Sections() {
+				isFinished := false
+				for index, s := range cfg.Sections() {
 					if s.Name() == "DEFAULT" {
 						continue
 					}
+
 					if s.HasKey("hosts") {
 						h, _ := s.GetKey("hosts")
-						resHosts, err := utils.GetAvailableIPFromMultilines(h.String())
+						resHosts, err := utils.GetAvailableIPFromMultiLines(h.String())
 						if err != nil {
 							utils.ColorPrint("ERROR", ">>>", "ERROR: ", err, "\n")
+							return
 						}
 						hosts = resHosts
 						userName := s.Key("user").String()
 						password := s.Key("pass").String()
 						port := s.Key("port").MustInt()
+
 						cmds, err := checkCommandArgs()
 						if err != nil {
 							utils.ColorPrint("ERROR", "", "ERROR:", err, "\n")
-						}
-						utils.ColorPrint("INFO", ">>> Group Name: ", "["+s.Name()+"]\n")
-						if *scriptFile != "" {
-							doSSHCommands(userName, password, "", port, hosts, []string{}, *scriptFile, *scriptArgs, "script")
 							return
 						}
-						doSSHCommands(userName, password, "", port, hosts, cmds, "", "", "cmds")
+						if *formatMode != "json" {
+							utils.ColorPrint("INFO", ">>> Group Name: ", "["+s.Name()+"]\n")
+						}
+						if index == len(cfg.Sections())-1 {
+							isFinished = true
+						}
+						if *scriptFile != "" {
+							doSSHCommands(userName, password, fmt.Sprintf("from hostgroup %s@%s file", s.Name(), *inventory), "", port, hosts, []string{}, *scriptFile, *scriptArgs, "script", isFinished)
+						}
+						if *cmdArgs != "" {
+							doSSHCommands(userName, password, fmt.Sprintf("from hostgroup %s@%s file", s.Name(), *inventory), "", port, hosts, cmds, "", "", "cmd", isFinished)
+						}
+
 					}
 				}
+				return
 			} else {
 				s, _ := cfg.GetSection(*group)
 				if s.HasKey("hosts") {
 					h, _ := s.GetKey("hosts")
-					resHosts, err := utils.GetAvailableIPFromMultilines(h.String())
+					resHosts, err := utils.GetAvailableIPFromMultiLines(h.String())
 					if err != nil {
 						utils.ColorPrint("ERROR", ">>>", "ERROR: ", err, "\n")
+						return
 					}
 					hosts = resHosts
 					userName := s.Key("user").String()
@@ -133,13 +153,17 @@ func main() {
 					cmds, err := checkCommandArgs()
 					if err != nil {
 						utils.ColorPrint("ERROR", "", "ERROR:", err, "\n")
-					}
-					utils.ColorPrint("INFO", ">>> Group Name: ", "["+s.Name()+"]\n")
-					if *scriptFile != "" {
-						doSSHCommands(userName, password, "", port, hosts, []string{}, *scriptFile, *scriptArgs, "script")
 						return
 					}
-					doSSHCommands(userName, password, "", port, hosts, cmds, "", "", "cmds")
+					if *formatMode != "json" {
+						utils.ColorPrint("INFO", ">>> Group Name: ", "["+s.Name()+"]\n")
+					}
+					if *scriptFile != "" {
+						doSSHCommands(userName, password, fmt.Sprintf("from hostgroup %s@%s file", s.Name(), *inventory), "", port, hosts, []string{}, *scriptFile, *scriptArgs, "script", true)
+					}
+					if *cmdArgs != "" {
+						doSSHCommands(userName, password, fmt.Sprintf("from hostgroup %s@%s file", s.Name(), *inventory), "", port, hosts, cmds, "", "", "cmd", true)
+					}
 				}
 			}
 			return
@@ -147,31 +171,39 @@ func main() {
 			hosts, err := utils.GetAvailableIPFromFile(*hostFile)
 			if err != nil {
 				utils.ColorPrint("ERROR", "", "ERROR:", err, "\n")
+				return
 			}
 			cmds, err := checkCommandArgs()
 			if err != nil {
 				utils.ColorPrint("ERROR", "", "ERROR:", err, "\n")
-			}
-			if *scriptFile != "" {
-				doSSHCommands(*user, *password, "", *port, hosts, []string{}, *scriptFile, *scriptArgs, "script")
 				return
 			}
-			doSSHCommands(*user, *password, "", *port, hosts, cmds, "", "", "cmds")
+			if *scriptFile != "" {
+				doSSHCommands(*user, *password, fmt.Sprintf("from file (%s)", *hostFile), "", *port, hosts, []string{}, *scriptFile, *scriptArgs, "script", true)
+				return
+			}
+			if *cmdArgs != "" {
+				doSSHCommands(*user, *password, fmt.Sprintf("from file (%s)", *hostFile), "", *port, hosts, cmds, "", "", "cmd", true)
+			}
 			return
 		} else if *hostList != "" {
 			hosts, err := utils.GetAvailableIP(*hostList)
 			if err != nil {
 				utils.ColorPrint("ERROR", "", "ERROR:", err, "\n")
+				return
 			}
 			cmds, err := checkCommandArgs()
 			if err != nil {
 				utils.ColorPrint("ERROR", "", "ERROR:", err, "\n")
-			}
-			if *scriptFile != "" {
-				doSSHCommands(*user, *password, "", *port, hosts, []string{}, *scriptFile, *scriptArgs, "script")
 				return
 			}
-			doSSHCommands(*user, *password, "", *port, hosts, cmds, "", "", "cmds")
+			if *scriptFile != "" {
+				doSSHCommands(*user, *password, fmt.Sprintf("from list (%s)", *hostList), "", *port, hosts, []string{}, *scriptFile, *scriptArgs, "script", true)
+				return
+			}
+			if *cmdArgs != "" {
+				doSSHCommands(*user, *password, fmt.Sprintf("from list (%s)", *hostList), "", *port, hosts, cmds, "", "", "cmd", true)
+			}
 			return
 		} else {
 			utils.ShowRunCommandUsage()
@@ -184,16 +216,18 @@ func main() {
 			cfg, err := utils.Cfg(*inventory)
 			if err != nil {
 				utils.ColorPrint("ERROR", ">>>", "ERROR: ", err, "\n")
+				return
 			}
 			if *group == "all" {
 				//get all hosts in config.ini file
-				for _, s := range cfg.Sections() {
+				isFinished := false
+				for index, s := range cfg.Sections() {
 					if s.Name() == "DEFAULT" {
 						continue
 					}
 					if s.HasKey("hosts") {
 						h, _ := s.GetKey("hosts")
-						resHosts, err := utils.GetAvailableIPFromMultilines(h.String())
+						resHosts, err := utils.GetAvailableIPFromMultiLines(h.String())
 						if err != nil {
 							utils.ColorPrint("ERROR", ">>>", "ERROR: ", err, "\n")
 						}
@@ -202,11 +236,14 @@ func main() {
 						password := s.Key("pass").String()
 						port := s.Key("port").MustInt()
 						utils.ColorPrint("INFO", ">>> Group Name: ", "["+s.Name()+"]\n")
+						if index == len(cfg.Sections())-1 {
+							isFinished = true
+						}
 						if *copyAction == "upload" {
-							doSFTPFileTransfer(userName, password, "", port, hosts, *sourcePath, *destinationPath, "upload")
-						}else if *copyAction == "download"{
-							doSFTPFileTransfer(userName, password, "", port, hosts, *sourcePath, *destinationPath, "download")
-						}else {
+							doSFTPFileTransfer(userName, password, s.Name(), "", port, hosts, *sourcePath, *destinationPath, "upload", isFinished)
+						} else if *copyAction == "download" {
+							doSFTPFileTransfer(userName, password, s.Name(), "", port, hosts, *sourcePath, *destinationPath, "download", isFinished)
+						} else {
 							utils.ShowFileTransferUsage()
 						}
 					}
@@ -215,19 +252,20 @@ func main() {
 				s, _ := cfg.GetSection(*group)
 				if s.HasKey("hosts") {
 					h, _ := s.GetKey("hosts")
-					resHosts, err := utils.GetAvailableIPFromMultilines(h.String())
+					resHosts, err := utils.GetAvailableIPFromMultiLines(h.String())
 					if err != nil {
 						utils.ColorPrint("ERROR", ">>>", "ERROR: ", err, "\n")
+						return
 					}
 					hosts = resHosts
 					userName := s.Key("user").String()
 					password := s.Key("pass").String()
 					port := s.Key("port").MustInt()
 					if *copyAction == "upload" {
-						doSFTPFileTransfer(userName, password, "", port, hosts, *sourcePath, *destinationPath, "upload")
-					}else if *copyAction == "download"{
-						doSFTPFileTransfer(userName, password, "", port, hosts, *sourcePath, *destinationPath, "download")
-					}else {
+						doSFTPFileTransfer(userName, password, s.Name(), "", port, hosts, *sourcePath, *destinationPath, "upload", true)
+					} else if *copyAction == "download" {
+						doSFTPFileTransfer(userName, password, s.Name(), "", port, hosts, *sourcePath, *destinationPath, "download", true)
+					} else {
 						utils.ShowFileTransferUsage()
 					}
 				}
@@ -237,12 +275,13 @@ func main() {
 			hosts, err := utils.GetAvailableIPFromFile(*hostFile)
 			if err != nil {
 				utils.ColorPrint("ERROR", "", "ERROR:", err, "\n")
+				return
 			}
 			if *copyAction == "upload" {
-				doSFTPFileTransfer(*user, *password, "", *port, hosts, *sourcePath, *destinationPath, "upload")
-			}else if *copyAction == "download"{
-				doSFTPFileTransfer(*user, *password, "", *port, hosts, *sourcePath, *destinationPath, "download")
-			}else {
+				doSFTPFileTransfer(*user, *password, "from-file", "", *port, hosts, *sourcePath, *destinationPath, "upload", true)
+			} else if *copyAction == "download" {
+				doSFTPFileTransfer(*user, *password, "from-file", "", *port, hosts, *sourcePath, *destinationPath, "download", true)
+			} else {
 				utils.ShowFileTransferUsage()
 			}
 			return
@@ -250,12 +289,13 @@ func main() {
 			hosts, err := utils.GetAvailableIP(*hostList)
 			if err != nil {
 				utils.ColorPrint("ERROR", "", "ERROR:", err, "\n")
+				return
 			}
 			if *copyAction == "upload" {
-				doSFTPFileTransfer(*user, *password, "", *port, hosts, *sourcePath, *destinationPath, "upload")
-			}else if *copyAction == "download"{
-				doSFTPFileTransfer(*user, *password, "", *port, hosts, *sourcePath, *destinationPath, "download")
-			}else {
+				doSFTPFileTransfer(*user, *password, "from-list", "", *port, hosts, *sourcePath, *destinationPath, "upload", true)
+			} else if *copyAction == "download" {
+				doSFTPFileTransfer(*user, *password, "from-list", "", *port, hosts, *sourcePath, *destinationPath, "download", true)
+			} else {
 				utils.ShowFileTransferUsage()
 			}
 			return
@@ -270,9 +310,10 @@ func listCommandAction(sec *ini.Section) {
 	if sec.HasKey("hosts") {
 		h, _ := sec.GetKey("hosts")
 		utils.ColorPrint("INFO", "", ">>> Hosts From: ", h.String(), "\n")
-		hosts, err := utils.GetAvailableIPFromMultilines(h.String())
+		hosts, err := utils.GetAvailableIPFromMultiLines(h.String())
 		if err != nil {
 			fmt.Errorf("ERROR: %s", err)
+			return
 		}
 		utils.PrintListHosts(hosts, *maxTableCellWidth, sec.Name())
 	}
@@ -301,8 +342,8 @@ func checkCommandArgs() ([]string, error) {
 	return cmds, nil
 }
 
-func doSSHCommands(user, password, key string, port int, todoHosts, cmds []string, scriptFilePath, scriptArgs, action string) {
-	var errHosts, successHosts []utils.SSHResult
+func doSSHCommands(user, password, hostGroupName, key string, port int, todoHosts, cmds []string, scriptFilePath, scriptArgs, action string, isFinished bool) {
+	var resultLog utils.ResultLogs
 	if len(cmds) == 0 {
 		cmds = append(cmds, "echo pong")
 	}
@@ -313,57 +354,65 @@ func doSSHCommands(user, password, key string, port int, todoHosts, cmds []strin
 	}
 	pool := utils.NewPool(*maxExecuteNum, len(todoHosts))
 	startTime := time.Now()
-	utils.ColorPrint("INFO", "", "Tips:", fmt.Sprintf("Process running start: %s\n", startTime.Format("2006-01-02 15:04:05")))
-	chs := make([]chan utils.SSHResult, len(todoHosts))
+	resultLog.StartTime = startTime.Format("2006-01-02 15:04:05")
+	resultLog.HostGroup = hostGroupName
+	switch *formatMode {
+	case "simple", "table":
+		utils.ColorPrint("INFO", "", "Tips:", fmt.Sprintf("Process running start: %s\n", resultLog.StartTime))
+	}
+	if *output != "" {
+		utils.WriteAndAppendFile(*output, fmt.Sprintf("Tips: process running start: %s", resultLog.StartTime))
+	}
+	chres := make([]chan interface{}, len(todoHosts))
 	for i, host := range todoHosts {
-		chs[i] = make(chan utils.SSHResult, 1)
-		go func(h string, ch chan utils.SSHResult, a string) {
+		chres[i] = make(chan interface{}, 1)
+		go func(h string, a string, chr chan interface{}) {
 			pool.AddOne()
 			switch a {
 			case "script":
-				utils.SSHRunShellScript(user, password, h, key, scriptFilePath, scriptArgs, port, ch)
-			case "cmds":
-				utils.DoSSHRunFast(user, password, h, key, cmds, port, ch)
+				utils.SSHRunShellScript(user, password, h, key, scriptFilePath, scriptArgs, port, chr)
+			case "cmd":
+				utils.DoSSHRunFast(user, password, h, key, cmds, port, chr)
 			}
 			pool.DelOne()
-		}(host, chs[i], action)
-		if *formatResult == "simple" {
-			res := <-chs[i]
-			if res.Status == "failed" {
-				errHosts = append(errHosts, res)
+		}(host, action, chres[i])
+		if *formatMode == "simple" || *output != "" {
+			res := <-chres[i]
+			if res.(utils.SSHResult).Status == "failed" {
+				resultLog.ErrorHosts = append(resultLog.ErrorHosts, res)
 			} else {
-				successHosts = append(successHosts, res)
+				resultLog.SuccessHosts = append(resultLog.SuccessHosts, res)
 			}
-			utils.FormatResultWithBasicStyle(i, res)
+			utils.FormatResultWithBasicStyle(i, res.(utils.SSHResult))
+			if *output != "" {
+				utils.LogSSHResultToFile(i, res.(utils.SSHResult), *output)
+			}
 		}
 	}
-	if *formatResult == "table" {
-		//formatResultWithTableStyle(chs)
-		for _, resCh := range chs {
-			result := <-resCh
-			if result.Status == "failed" {
-				errHosts = append(errHosts, result)
-			} else {
-				successHosts = append(successHosts, result)
+	switch *formatMode {
+	case "simple":
+		utils.FormatResultLogWithSimpleStyle(resultLog, startTime, *maxTableCellWidth, []string{"Result"})
+	case "table":
+		utils.FormatResultLogWithTableStyle(chres, resultLog, startTime, *maxTableCellWidth)
+	case "json":
+		if *inventory != "" && *group == "all" {
+			log := utils.GetAllResultLog(chres, resultLog, startTime)
+			allResultLogs = append(allResultLogs, log)
+			if isFinished {
+				utils.FormatResultToJson(allResultLogs, *jsonRaw)
 			}
+		} else {
+			utils.FormatResultLogWithJsonStyle(chres, resultLog, startTime, *jsonRaw)
 		}
-		if len(successHosts) > 0 {
-			utils.ColorPrint("INFO", "", "INFO: ", "Success hosts\n")
-			utils.FormatResultWithTableStyle(successHosts, *maxTableCellWidth)
-		}
+	}
+	if *output != "" {
+		utils.ResultLogInfo(resultLog, startTime, true, *output)
 	}
 	pool.Wg.Wait()
-	if len(errHosts) > 0 {
-		utils.ColorPrint("ERROR", "", "WARNING: ", "Failed hosts, please confirm!\n")
-		utils.FormatErorCommandsResultWithTableStyle(errHosts, *maxTableCellWidth)
-	}
-	endTime := time.Now()
-	utils.ColorPrint("INFO", "", "Tips: ", fmt.Sprintf("Process running done.\n"))
-	fmt.Printf("End Time: %s\nCost Time: %s\nTotal Hosts Running: %s\n", endTime.Format("2006-01-02 15:04:05"), endTime.Sub(startTime), fmt.Sprintf("%d(Success) + %d(Failed) = %d(Total)\n", len(successHosts), len(errHosts), len(successHosts)+len(errHosts)))
 }
 
-func doSFTPFileTransfer(user, password, key string, port int, todoHosts []string, sourcePath, destinationPath, action string) {
-	var errHosts, successHosts []utils.SFTPResult
+func doSFTPFileTransfer(user, password, hostGroupName, key string, port int, todoHosts []string, sourcePath, destinationPath, action string, isFinished bool) {
+	var resultLog utils.ResultLogs
 	todoHosts, err := utils.DuplicateIPAddressCheck(todoHosts)
 	if err != nil {
 		fmt.Println(err)
@@ -371,51 +420,58 @@ func doSFTPFileTransfer(user, password, key string, port int, todoHosts []string
 	}
 	pool := utils.NewPool(*maxExecuteNum, len(todoHosts))
 	startTime := time.Now()
-	utils.ColorPrint("INFO", "", "Tips:", fmt.Sprintf("Process running start: %s\n", startTime.Format("2006-01-02 15:04:05")))
-	chs := make([]chan utils.SFTPResult, len(todoHosts))
+	resultLog.StartTime = startTime.Format("2006-01-02 15:04:05")
+	resultLog.HostGroup = hostGroupName
+	if *formatMode == "simple" || *formatMode == "table" {
+		utils.ColorPrint("INFO", "", "Tips:", fmt.Sprintf("Process running start: %s\n", resultLog.StartTime))
+	}
+	if *output != "" {
+		utils.WriteAndAppendFile(*output, fmt.Sprintf("Tips: process running start: %s", resultLog.StartTime))
+	}
+	chres := make([]chan interface{}, len(todoHosts))
 	for i, host := range todoHosts {
-		chs[i] = make(chan utils.SFTPResult, 1)
-		go func(h string, ch chan utils.SFTPResult, a, s, d string) {
+		chres[i] = make(chan interface{}, 1)
+		go func(h string, a, s, d string, chr chan interface{}) {
 			pool.AddOne()
 			switch a {
 			case "upload":
-				utils.SFTPUpload(user, password, h, key, port, s, d, ch)
+				utils.SFTPUpload(user, password, h, key, port, s, d, chr)
 			case "download":
-				utils.SFTPDownload(user, password, h, key, port, s, d, ch)
+				utils.SFTPDownload(user, password, h, key, port, s, d, chr)
 			}
 			pool.DelOne()
-		}(host, chs[i], action, sourcePath, destinationPath)
-		if *formatResult == "simple" {
-			res := <-chs[i]
-			if res.Status == "failed" {
-				errHosts = append(errHosts, res)
+		}(host, action, sourcePath, destinationPath, chres[i])
+		if *formatMode == "simple" || *output != "" {
+			res := <-chres[i]
+			if res.(utils.SFTPResult).Status == "failed" {
+				resultLog.ErrorHosts = append(resultLog.ErrorHosts, res)
 			} else {
-				successHosts = append(successHosts, res)
+				resultLog.SuccessHosts = append(resultLog.SuccessHosts, res)
 			}
-			utils.SFTPFormatResultWithBasicStyle(i, res)
+			utils.SFTPFormatResultWithBasicStyle(i, res.(utils.SFTPResult))
+			if *output != "" {
+				utils.LogSFTPResultToFile(i, res.(utils.SFTPResult), *output)
+			}
 		}
 	}
-	if *formatResult == "table" {
-		//formatResultWithTableStyle(chs)
-		for _, resCh := range chs {
-			result := <-resCh
-			if result.Status == "failed" {
-				errHosts = append(errHosts, result)
-			} else {
-				successHosts = append(successHosts, result)
+	switch *formatMode {
+	case "simple":
+		utils.FormatResultLogWithSimpleStyle(resultLog, startTime, *maxTableCellWidth, []string{})
+	case "table":
+		utils.FormatResultLogWithTableStyle(chres, resultLog, startTime, *maxTableCellWidth)
+	case "json":
+		if *inventory != "" && *group == "all" {
+			log := utils.GetAllResultLog(chres, resultLog, startTime)
+			allResultLogs = append(allResultLogs, log)
+			if isFinished {
+				utils.FormatResultToJson(allResultLogs, *jsonRaw)
 			}
+		} else {
+			utils.FormatResultLogWithJsonStyle(chres, resultLog, startTime, *jsonRaw)
 		}
-		if len(successHosts) > 0 {
-			utils.ColorPrint("INFO", "", "INFO: ", "Success hosts\n")
-			utils.SFTPFormatResultWithTableStyle(successHosts, *maxTableCellWidth)
-		}
+	}
+	if *output != "" {
+		utils.ResultLogInfo(resultLog, startTime, true, *output)
 	}
 	pool.Wg.Wait()
-	if len(errHosts) > 0 {
-		utils.ColorPrint("ERROR", "", "WARNING: ", "Failed hosts, please confirm!\n")
-		utils.SFTPFormatResultWithTableStyle(errHosts, *maxTableCellWidth)
-	}
-	endTime := time.Now()
-	utils.ColorPrint("INFO", "", "Tips: ", fmt.Sprintf("Process running done.\n"))
-	fmt.Printf("End Time: %s\nCost Time: %s\nTotal Hosts Running: %s\n", endTime.Format("2006-01-02 15:04:05"), endTime.Sub(startTime), fmt.Sprintf("%d(Success) + %d(Failed) = %d(Total)\n", len(successHosts), len(errHosts), len(successHosts)+len(errHosts)))
 }
