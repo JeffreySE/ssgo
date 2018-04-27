@@ -60,7 +60,7 @@ func connect(user, password, host, key string, port int) (*ssh.Session, error) {
 		},
 	}
 
-	// connet to ssh
+	// connect to ssh
 	addr = fmt.Sprintf("%s:%d", host, port)
 
 	if client, err = ssh.Dial("tcp", addr, clientConfig); err != nil {
@@ -85,7 +85,7 @@ func connect(user, password, host, key string, port int) (*ssh.Session, error) {
 	return session, nil
 }
 
-func SSHRunShellScript(user, password, host, key, scriptFilePath, scriptAgrs string, port int, ch chan SSHResult) {
+func SSHRunShellScript(user, password, host, key, scriptFilePath, scriptArgs string, port int, chr chan interface{}) {
 	var sshResult SSHResult
 	var cmds []string
 	sshResult.Host = host
@@ -93,85 +93,87 @@ func SSHRunShellScript(user, password, host, key, scriptFilePath, scriptAgrs str
 	if err != nil {
 		sshResult.Status = "failed"
 		sshResult.Result = fmt.Sprintf("ERROR: while connecting host %s, an error occured,error message: %s", sshResult.Host, err)
-		ch <- sshResult
+		chr <- sshResult
 		return
 	}
 	defer session.Close()
-	var outbt, errbt bytes.Buffer
-	session.Stdout = &outbt
-	session.Stderr = &errbt
+	var outBuffer, errBuffer bytes.Buffer
+	session.Stdout = &outBuffer
+	session.Stderr = &errBuffer
 
 	resSftpResult := SFTPSimpleUpload(user, password, host, key, port, scriptFilePath, "")
 	if resSftpResult.Status == "false" {
 		sshResult.Status = "failed"
 		sshResult.Result = fmt.Sprintf("ERROR: copy local Shell script %s to host %s failed, error message: %s", scriptFilePath, sshResult.Host, err.Error())
-		ch <- sshResult
+		chr <- sshResult
 		return
 	}
 
 	scriptFileRemotePath := resSftpResult.DestinationPath + "/" + filepath.Base(scriptFilePath)
-	executeScriptCmd := fmt.Sprintf("%s %s %s", "/bin/sh", scriptFileRemotePath, scriptAgrs)
+	executeScriptCmd := fmt.Sprintf("%s %s %s", "/bin/sh", scriptFileRemotePath, scriptArgs)
 	removeScriptBeforeExitCmd := fmt.Sprintf("rm -rf %s", scriptFileRemotePath)
 	cmds = append(cmds, executeScriptCmd, removeScriptBeforeExitCmd, "exit")
 	cmd := strings.Join(cmds, " && ")
 	err = session.Run(cmd)
 	if err != nil {
 		sshResult.Status = "failed"
-		sshResult.Result = fmt.Sprintf("ERROR: while running command (%s) on host %s, an error occured %s", cmd, sshResult.Host, err.Error())
-		ch <- sshResult
+		res := outBuffer.String()
+		res = strings.TrimSpace(res)
+		sshResult.Result = fmt.Sprintf("%s\nERROR: while running script (%s) on host %s, an error occured %s", res, scriptFilePath, sshResult.Host, err.Error())
+		chr <- sshResult
 		return
 	}
-	if errbt.String() != "" {
+	if errBuffer.String() != "" {
 		sshResult.Status = "failed"
-		sshResult.Result = errbt.String()
-		ch <- sshResult
+		sshResult.Result = errBuffer.String()
+		chr <- sshResult
 	} else {
 		sshResult.Status = "success"
-		sshResult.Result = outbt.String()
-		ch <- sshResult
+		sshResult.Result = outBuffer.String()
+		chr <- sshResult
 	}
-	ch <- sshResult
+	chr <- sshResult
 	return
 }
-func DoSSHRunFast(user, password, host, key string, cmdList []string, port int, ch chan SSHResult) {
+func DoSSHRunFast(user, password, host, key string, cmdList []string, port int, chr chan interface{}) {
 	var sshResult SSHResult
 	sshResult.Host = host
 	session, err := connect(user, password, host, key, port)
 	if err != nil {
 		sshResult.Status = "failed"
 		sshResult.Result = fmt.Sprintf("ERROR: while connecting host %s, an error occured %s", sshResult.Host, err)
-		ch <- sshResult
+		chr <- sshResult
 		return
 	}
 	defer session.Close()
 
-	var outbt, errbt bytes.Buffer
-	session.Stdout = &outbt
-	session.Stderr = &errbt
+	var outBuffer, errBuffer bytes.Buffer
+	session.Stdout = &outBuffer
+	session.Stderr = &errBuffer
 
 	newCmd := strings.Join(cmdList, " && ")
 	err = session.Run(newCmd)
 	if err != nil {
 		sshResult.Status = "failed"
-		res := outbt.String()
+		res := outBuffer.String()
 		res = strings.TrimSpace(res)
 
-		sshResult.Result = fmt.Sprintf("%s\nERROR: while running one or more command failed on host %s, an error occured %s", res,sshResult.Host, err.Error())
-		ch <- sshResult
+		sshResult.Result = fmt.Sprintf("%s\nERROR: while running one or more command failed on host %s, an error occured %s", res, sshResult.Host, err.Error())
+		chr <- sshResult
 		return
 	}
-	if errbt.String() != "" {
+	if errBuffer.String() != "" {
 		sshResult.Status = "failed"
-		res := errbt.String()
+		res := errBuffer.String()
 		res = strings.TrimSpace(res)
 		sshResult.Result = res
-		ch <- sshResult
+		chr <- sshResult
 	} else {
 		sshResult.Status = "success"
-		res := outbt.String()
+		res := outBuffer.String()
 		res = strings.TrimSpace(res)
 		sshResult.Result = res
-		ch <- sshResult
+		chr <- sshResult
 	}
 	return
 }
