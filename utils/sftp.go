@@ -1,22 +1,22 @@
 package utils
 
 import (
-	"golang.org/x/crypto/ssh"
-	"io/ioutil"
-	"time"
-	"net"
 	"fmt"
 	"github.com/pkg/sftp"
+	"golang.org/x/crypto/ssh"
+	"io/ioutil"
+	"net"
 	"os"
 	"path"
+	"time"
 )
 
 type SFTPResult struct {
-	Host string
-	Status string
-	SourcePath string
+	Host            string
+	Status          string
+	SourcePath      string
 	DestinationPath string
-	Result string
+	Result          string
 }
 
 // coped from https://github.com/shanghai-edu/multissh (thank you very much)
@@ -25,7 +25,7 @@ func sftpConnect(user, password, host, key string, port int) (*sftp.Client, erro
 		auth         []ssh.AuthMethod
 		addr         string
 		clientConfig *ssh.ClientConfig
-		sshClient       *ssh.Client
+		sshClient    *ssh.Client
 		config       ssh.Config
 		sftpClient   *sftp.Client
 		err          error
@@ -62,7 +62,7 @@ func sftpConnect(user, password, host, key string, port int) (*sftp.Client, erro
 		},
 	}
 
-	// connet to ssh
+	// connect to ssh
 	addr = fmt.Sprintf("%s:%d", host, port)
 
 	if sshClient, err = ssh.Dial("tcp", addr, clientConfig); err != nil {
@@ -77,19 +77,19 @@ func sftpConnect(user, password, host, key string, port int) (*sftp.Client, erro
 	return sftpClient, nil
 }
 
-func SFTPSimpleUpload(user, password, host, key string, port int,sourcePath,destinationPath string) SFTPResult {
+func SFTPSimpleUpload(user, password, host, key string, port int, sourcePath, destinationPath string) SFTPResult {
 	var (
 		err        error
 		sftpClient *sftp.Client
-		sftpResult  SFTPResult
+		sftpResult SFTPResult
 	)
 	sftpResult.Host = host
 	sftpResult.SourcePath = sourcePath
 	sftpResult.DestinationPath = destinationPath
-	sftpClient, err = sftpConnect(user, password, host, key,port)
+	sftpClient, err = sftpConnect(user, password, host, key, port)
 	if err != nil {
 		sftpResult.Status = "failed"
-		sftpResult.Result = fmt.Sprintf("ERROR: sftp connect to %s, error message:%s",sftpResult.Host,err.Error())
+		sftpResult.Result = fmt.Sprintf("ERROR: sftp connect to %s failed, error message:%s", sftpResult.Host, err.Error())
 		return sftpResult
 	}
 	defer sftpClient.Close()
@@ -97,7 +97,7 @@ func SFTPSimpleUpload(user, password, host, key string, port int,sourcePath,dest
 	srcFile, err := os.Open(sourcePath)
 	if err != nil {
 		sftpResult.Status = "failed"
-		sftpResult.Result = fmt.Sprintf("ERROR: os open file \"%s\" failed, error message:%s",sftpResult.Host,err.Error())
+		sftpResult.Result = fmt.Sprintf("ERROR: os open file \"%s\" failed, error message:%s", sftpResult.Host, err.Error())
 		return sftpResult
 	}
 	defer srcFile.Close()
@@ -106,7 +106,7 @@ func SFTPSimpleUpload(user, password, host, key string, port int,sourcePath,dest
 	dstFile, err := sftpClient.Create(path.Join(destinationPath, remoteFileName))
 	if err != nil {
 		sftpResult.Status = "failed"
-		sftpResult.Result = fmt.Sprintf("ERROR: while upload file \"%s\" to remote path \"%s\" ,error message:%s ",sftpResult.SourcePath,sftpResult.DestinationPath,err.Error())
+		sftpResult.Result = fmt.Sprintf("ERROR: while upload file \"%s\" to remote path \"%s\" ,error message:%s ", sftpResult.SourcePath, sftpResult.DestinationPath, err.Error())
 		return sftpResult
 	}
 	defer dstFile.Close()
@@ -120,7 +120,7 @@ func SFTPSimpleUpload(user, password, host, key string, port int,sourcePath,dest
 		dstFile.Write(buf)
 	}
 	if destinationPath == "" {
-		currWorkDir,_ := sftpClient.Getwd()
+		currWorkDir, _ := sftpClient.Getwd()
 		sftpResult.DestinationPath = currWorkDir
 	}
 	sftpResult.Status = "success"
@@ -128,42 +128,42 @@ func SFTPSimpleUpload(user, password, host, key string, port int,sourcePath,dest
 	return sftpResult
 }
 
-func SFTPUpload(user, password, host, key string, port int,sourcePath,destinationPath string, ch chan SFTPResult)  {
+func SFTPUpload(user, password, host, key string, port int, sourcePath, destinationPath string, chr chan interface{}) {
 	var (
 		err        error
 		sftpClient *sftp.Client
-		sftpResult  SFTPResult
+		sftpResult SFTPResult
 	)
 	sftpResult.Host = host
 	sftpResult.SourcePath = sourcePath
 	sftpResult.DestinationPath = destinationPath
-	sftpClient, err = sftpConnect(user, password, host, key,port)
+	sftpClient, err = sftpConnect(user, password, host, key, port)
 	if err != nil {
 		sftpResult.Status = "failed"
-		sftpResult.Result = fmt.Sprintf("ERROR: sftp connect to %s, error message:%s",sftpResult.Host,err.Error())
-		ch <- sftpResult
+		sftpResult.Result = fmt.Sprintf("ERROR: sftp connect to %s failed, error message:%s", sftpResult.Host, err.Error())
+		chr <- sftpResult
 		return
 	}
 	defer sftpClient.Close()
 	if destinationPath == "" {
-		currWorkDir,_ := sftpClient.Getwd()
+		currWorkDir, _ := sftpClient.Getwd()
 		sftpResult.DestinationPath = currWorkDir
 	}
 	srcFile, err := os.Open(sourcePath)
 	if err != nil {
 		sftpResult.Status = "failed"
-		sftpResult.Result = fmt.Sprintf("ERROR: os open file \"%s\" failed, error message:%s",sftpResult.Host,err.Error())
-		ch <- sftpResult
+		sftpResult.Result = fmt.Sprintf("ERROR: os open file \"%s\" failed, error message:%s", sftpResult.Host, err.Error())
+		chr <- sftpResult
 		return
 	}
 	defer srcFile.Close()
-
-	var remoteFileName = path.Base(sourcePath)
+	srcFileInfo, _ := srcFile.Stat()
+	remoteFileName := srcFileInfo.Name()
 	dstFile, err := sftpClient.Create(path.Join(destinationPath, remoteFileName))
 	if err != nil {
 		sftpResult.Status = "failed"
-		sftpResult.Result = fmt.Sprintf("ERROR: while upload file \"%s\" to remote path \"%s\" ,error message:%s ",sftpResult.SourcePath,sftpResult.DestinationPath,err.Error())
-		ch <- sftpResult
+		sftpResult.Result = fmt.Sprintf("ERROR: while upload file \"%s\" to remote path \"%s\" ,error message:%s ", sftpResult.SourcePath, sftpResult.DestinationPath, err.Error())
+		chr <- sftpResult
 		return
 	}
 	defer dstFile.Close()
@@ -179,24 +179,24 @@ func SFTPUpload(user, password, host, key string, port int,sourcePath,destinatio
 
 	sftpResult.Status = "success"
 	sftpResult.Result = fmt.Sprintf("Upload finished!:)")
-	ch <- sftpResult
+	chr <- sftpResult
 	return
 }
 
-func SFTPDownload(user, password, host, key string, port int,sourcePath,destinationPath string, ch chan SFTPResult)  {
+func SFTPDownload(user, password, host, key string, port int, sourcePath, destinationPath string, chr chan interface{}) {
 	var (
 		err        error
 		sftpClient *sftp.Client
-		sftpResult  SFTPResult
+		sftpResult SFTPResult
 	)
 	sftpResult.Host = host
 	sftpResult.SourcePath = sourcePath
 	sftpResult.DestinationPath = destinationPath
-	sftpClient, err = sftpConnect(user, password, host, key,port)
+	sftpClient, err = sftpConnect(user, password, host, key, port)
 	if err != nil {
 		sftpResult.Status = "failed"
-		sftpResult.Result = fmt.Sprintf("ERROR: sftp connect to %s, error message:%s",sftpResult.Host,err.Error())
-		ch <- sftpResult
+		sftpResult.Result = fmt.Sprintf("ERROR: sftp connect to %s failed, error message:%s", sftpResult.Host, err.Error())
+		chr <- sftpResult
 		return
 	}
 	defer sftpClient.Close()
@@ -204,35 +204,35 @@ func SFTPDownload(user, password, host, key string, port int,sourcePath,destinat
 	srcFile, err := sftpClient.Open(sourcePath)
 	if err != nil {
 		sftpResult.Status = "failed"
-		sftpResult.Result = fmt.Sprintf("ERROR: sftp open file failed %s, error message:%s",sftpResult.SourcePath,err.Error())
-		ch <- sftpResult
+		sftpResult.Result = fmt.Sprintf("ERROR: sftp open file failed %s, error message:%s", sftpResult.SourcePath, err.Error())
+		chr <- sftpResult
 		return
 	}
 	defer srcFile.Close()
 	if destinationPath == "" {
-		currWorkDir,_ := os.Getwd()
+		currWorkDir, _ := os.Getwd()
 		sftpResult.DestinationPath = currWorkDir
 	}
-	fileInfo,_ := srcFile.Stat()
-	var localFileName = fmt.Sprintf("%s_%s",sftpResult.Host,fileInfo.Name())
+	fileInfo, _ := srcFile.Stat()
+	var localFileName = fmt.Sprintf("%s_%s", sftpResult.Host, fileInfo.Name())
 	dstFile, err := os.Create(path.Join(destinationPath, localFileName))
 	if err != nil {
 		sftpResult.Status = "failed"
-		sftpResult.Result = fmt.Sprintf("ERROR: while download file \"%s\" to local path \"%s\" ,error message: %s",sftpResult.SourcePath,sftpResult.DestinationPath,err.Error())
-		ch <- sftpResult
+		sftpResult.Result = fmt.Sprintf("ERROR: while download file \"%s\" to local path \"%s\" ,error message: %s", sftpResult.SourcePath, sftpResult.DestinationPath, err.Error())
+		chr <- sftpResult
 		return
 	}
 	defer dstFile.Close()
 
-	if _,err := srcFile.WriteTo(dstFile);err != nil {
+	if _, err := srcFile.WriteTo(dstFile); err != nil {
 		sftpResult.Status = "failed"
-		sftpResult.Result = fmt.Sprintf("ERROR: while download file \"%s\" to local path \"%s\" ,error message:%s ",sftpResult.SourcePath,sftpResult.DestinationPath,err.Error())
-		ch <- sftpResult
+		sftpResult.Result = fmt.Sprintf("ERROR: while download file \"%s\" to local path \"%s\" ,error message:%s ", sftpResult.SourcePath, sftpResult.DestinationPath, err.Error())
+		chr <- sftpResult
 		return
 	}
 
 	sftpResult.Status = "success"
 	sftpResult.Result = fmt.Sprintf("Download finished!:)")
-	ch <- sftpResult
+	chr <- sftpResult
 	return
 }
