@@ -24,7 +24,7 @@ ssgo是一个基于SSH协议开发的小工具，面向系统管理员，主要�
 
 ### 5. 使用帮助
 ``` bash
-.\ssgo.exe -h
+λ ssgo.exe -h
 usage: ssgo [<flags>] <command> [<args> ...]
 
 A SSH-based command line tool for operating remote hosts.
@@ -62,6 +62,7 @@ Flags:
                               data.(Default is false)
   -w, --maxTableCellWidth=40  For pretty look,you can set the printed table's
                               max cell width in terminal.(Default is 40)
+  -v, --version               Show application version.
 
 Commands:
   help [<command>...]
