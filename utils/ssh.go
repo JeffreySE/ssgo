@@ -53,7 +53,7 @@ func connect(user, password, host, key string, port int) (*ssh.Session, error) {
 	clientConfig = &ssh.ClientConfig{
 		User:    user,
 		Auth:    auth,
-		Timeout: 30 * time.Second,
+		Timeout: 5 * time.Second,
 		Config:  config,
 		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 			return nil
