@@ -1,21 +1,34 @@
 package utils
 
 import (
+	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/bndr/gotabulate"
 	"github.com/daviddengcn/go-colortext"
+	"github.com/go-ini/ini"
 	"io/ioutil"
 	"net"
 	"os"
-	"path/filepath" // 适用于Windows、Unix平台
+	"path/filepath" // cross platform for windows & linux
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
-	"github.com/go-ini/ini"
-	"github.com/bndr/gotabulate"
+	"time"
 )
+
+type ResultLogs struct {
+	StartTime      string
+	HostGroup      string
+	SuccessHosts   []interface{}
+	ErrorHosts     []interface{}
+	EndTime        string
+	CostTime       string
+	TotalHostsInfo string
+}
 
 // 检测文件或文件夹是否存在
 func IsPathExists(path string) (bool, error) {
@@ -39,7 +52,6 @@ func GetCurrentDir() string {
 // 根据输入路径获取该路径的物理路径，如果是相对路径，则附加在当前目录下，并判断附加后的路径是否存在
 func GetRealPath(strPath string) (string, error) {
 	if !filepath.IsAbs(strPath) {
-		fmt.Println()
 		pwd := filepath.Join(GetCurrentDir(), strPath)
 		absStrPath, _ := filepath.Abs(pwd)
 		strPath = absStrPath
@@ -62,7 +74,7 @@ func IsPathExistInCurrentPath(path string) (bool, error) {
 	return true, nil
 }
 
-//检测sshx默认配置文件config.ini文件是否存在
+//检测ssgo默认配置文件config.ini文件是否存在
 func CheckDefaultINIFile(name string) (bool, error) {
 	r, err := IsPathExistInCurrentPath(name)
 
@@ -89,27 +101,16 @@ func IPMaskToCIDRMask(netmask string) (bool, string) {
 	for _, v := range netMasks {
 		intV, err := strconv.Atoi(v)
 		if err != nil {
-			return false, "ERROR: '" + netmask + "' is not a valid netmask, netmask should be numbers,please check the netmask form!"
+			return false, "ERROR: '" + netmask + "' is not a valid subnet mask, subnet mask should be numbers,please check the subnet mask form!"
 		}
 		ms = append(ms, intV)
 	}
 	ipMask := net.IPv4Mask(byte(ms[0]), byte(ms[1]), byte(ms[2]), byte(ms[3]))
 	ones, _ := ipMask.Size()
 	if ones == 0 {
-		return false, "ERROR: '" + netmask + "' is not a valid netmask,please check the netmask form!"
+		return false, "ERROR: '" + netmask + "' is not a valid subnet mask,please check the subnet mask form!"
 	}
 	return true, strconv.Itoa(ones)
-}
-
-func CheckIPMask(ipMask string) (bool, string) {
-	if net.ParseIP(ipMask) == nil {
-		return false, "ERROR: '" + ipMask + "' is not a valid netmask,please check the netmask form!"
-	}
-	ok, cidrResult := IPMaskToCIDRMask(ipMask)
-	if ok == false {
-		return false, cidrResult
-	}
-	return true, cidrResult
 }
 
 //获取可用IP地址 默认以逗号分隔符来根据IP地址表示形式来解析可用IP地址清单
@@ -121,7 +122,7 @@ func GetAvailableIP(strIPList string) ([]string, error) {
 	if !strings.Contains(strIPList, ",") {
 		ips, err := GetAvailableIPList(strIPList)
 		if err != nil {
-			return availableIPs,err
+			return availableIPs, err
 		}
 		availableIPs = ips
 		return availableIPs, nil
@@ -135,7 +136,7 @@ func GetAvailableIP(strIPList string) ([]string, error) {
 		availableIPs = append(availableIPs, ips...)
 	}
 	if len(availableIPs) == 0 {
-		return availableIPs, errors.New("ERROR: no valid IP Address found, please check your input!")
+		return availableIPs, fmt.Errorf("ERROR: no valid IP Address found, please check your input")
 	}
 
 	return availableIPs, nil
@@ -228,11 +229,11 @@ func DuplicateIPAddressCheck(ips []string) ([]string, error) {
 //192.168.100.200-192.168.100.204"
 //192.168.100.208"
 // `
-func GetAvailableIPFromMultilines(multiLines string) ([]string, error) {
+func GetAvailableIPFromMultiLines(multiLines string) ([]string, error) {
 	var availableIPs []string
 	multiLines = strings.TrimSpace(multiLines)
 	if len(multiLines) == 0 {
-		return availableIPs, errors.New("ERROR: Blank text, no valid IP Address found!")
+		return availableIPs, fmt.Errorf("ERROR: empty text, no valid IP Address found")
 	}
 
 	ipLists := strings.Split(multiLines, "\n")
@@ -244,7 +245,7 @@ func GetAvailableIPFromMultilines(multiLines string) ([]string, error) {
 		availableIPs = append(availableIPs, ips...)
 	}
 	if len(availableIPs) == 0 {
-		return availableIPs, errors.New("ERROR: no valid IP Address found, please check your input!")
+		return availableIPs, fmt.Errorf("ERROR: no valid IP Address found, please check your input")
 	}
 	return availableIPs, nil
 }
@@ -265,7 +266,7 @@ func GetAvailableIPList(strIP string) ([]string, error) {
 		} else if ips, err := GetAvailableIPWithMask(strIP); err == nil {
 			availableIPs = append(availableIPs, ips...)
 		} else {
-			return availableIPs, errors.New("ERROR: no valid IP Address found, please check!")
+			return availableIPs, fmt.Errorf("ERROR: no valid IP Address found, please check")
 		}
 	}
 
@@ -355,10 +356,10 @@ func GetAvailableIPFromSingleIP(ipAddress string) ([]string, error) {
 // 比如：输入  192.168.1.100 输出 192.168.1.100/32
 // 比如：输入  192.168.1.100/24 输出 192.168.1.100/24
 // 比如：输入  192.168.1.100/255.255.255.0 输出 192.168.1.100/24
-func IPAddressToCIDR(ipAdress string) (string, error) {
-	ipAdress = strings.TrimSpace(ipAdress)
-	if strings.Contains(ipAdress, "/") == true {
-		ipAndMask := strings.Split(ipAdress, "/")
+func IPAddressToCIDR(ipAddress string) (string, error) {
+	ipAddress = strings.TrimSpace(ipAddress)
+	if strings.Contains(ipAddress, "/") == true {
+		ipAndMask := strings.Split(ipAddress, "/")
 		ip := ipAndMask[0]
 		if CheckIp(ip) == false {
 			return "", errors.New("ERROR: '" + ip + "' is not a valid IP Address, please confirm!!!")
@@ -384,10 +385,10 @@ func IPAddressToCIDR(ipAdress string) (string, error) {
 		}
 		return ip + "/" + mask, nil
 	} else {
-		if net.ParseIP(ipAdress) == nil {
-			return "", errors.New("ERROR: '" + ipAdress + "' is not a valid IP Address, please check!")
+		if net.ParseIP(ipAddress) == nil {
+			return "", errors.New("ERROR: '" + ipAddress + "' is not a valid IP Address, please check!")
 		}
-		return ipAdress + "/" + strconv.Itoa(32), nil
+		return fmt.Sprintf("%s/%d", ipAddress, 32), nil
 	}
 }
 
@@ -399,11 +400,11 @@ func GetAvailableIPWithMask(ipAndMask string) ([]string, error) {
 	if err != nil {
 		return availableIPs, err
 	}
-	_, ipnet, _ := net.ParseCIDR(ipAndCIDRMask)
+	_, ipNet, _ := net.ParseCIDR(ipAndCIDRMask)
 
-	firstIP, _ := networkRange(ipnet)
+	firstIP, _ := networkRange(ipNet)
 	ipNum := ipToInt(firstIP)
-	size := networkSize(ipnet.Mask)
+	size := networkSize(ipNet.Mask)
 	pos := int32(1)
 	max := size - 2 // -1 for the broadcast address, -1 for the gateway address
 
@@ -470,10 +471,29 @@ func DuplicateToStringSlice(fromInterface interface{}) ([]string, error) {
 		if t.String() == "string" {
 			str = append(str, reflect.ValueOf(v).String())
 		} else {
-			return str, errors.New("ERROR: Interface Type convert to Strings Type Failed!")
+			return str, fmt.Errorf("ERROR: Interface Type convert to Strings Type Failed")
 		}
 	}
 	return str, nil
+}
+
+// Get difference items between two slices
+func DiffStringSlices(slice1 []string, slice2 []string) []string {
+	var diffStr []string
+	m := map[string]int{}
+	for _, s1Val := range slice1 {
+		m[s1Val] = 1
+	}
+	for _, s2Val := range slice2 {
+		m[s2Val] = m[s2Val] + 1
+	}
+	for mKey, mVal := range m {
+		if mVal == 1 {
+			diffStr = append(diffStr, mKey)
+		}
+	}
+
+	return diffStr
 }
 
 // 接受用户输入，确认是否继续下一步操作
@@ -500,7 +520,7 @@ func ParseBool(str string) (value bool, err error) {
 }
 
 // 控制台输出颜色控制，兼容Windows & Linux
-func ColorPrint(logLevel string, nomallTextBefore interface{},colorText string, nomallTextAfter ...interface{}) {
+func ColorPrint(logLevel string, textBefore interface{}, colorText string, textAfter ...interface{}) {
 	color := ct.None
 	switch logLevel {
 	case "INFO":
@@ -510,85 +530,125 @@ func ColorPrint(logLevel string, nomallTextBefore interface{},colorText string, 
 	case "ERROR":
 		color = ct.Red
 	}
-	fmt.Printf("%s", nomallTextBefore)
+	fmt.Printf("%s", textBefore)
 	ct.Foreground(color, true)
 	fmt.Printf("%s", colorText)
 	ct.ResetColor()
-	for _,v := range nomallTextAfter{
+	for _, v := range textAfter {
 		fmt.Printf("%s", v)
 	}
 }
 
-
 //  根据默认config.ini
 func Cfg(iniFilePath string) (*ini.File, error) {
 	var cf *ini.File
-	if _,err := GetRealPath(iniFilePath); err != nil {
-		return cf,fmt.Errorf("%s not exist! please check",iniFilePath)
+	if _, err := GetRealPath(iniFilePath); err != nil {
+		return cf, fmt.Errorf("%s not exist! please check", iniFilePath)
 	}
 	isConfigINIExist, _ := CheckDefaultINIFile("config.ini")
 	if !isConfigINIExist {
 		fmt.Println("Default config.ini not exist")
-		return cf,fmt.Errorf("default config.ini not exist, please confirm")
+		return cf, fmt.Errorf("default config.ini not exist, please confirm")
 	}
-	inifile, _ := filepath.Abs(iniFilePath)
-	cfg, err := ini.LoadSources(ini.LoadOptions{IgnoreInlineComment: true}, inifile)
+	iniFile, _ := filepath.Abs(iniFilePath)
+	cfg, err := ini.LoadSources(ini.LoadOptions{IgnoreInlineComment: true}, iniFile)
 	cfg.BlockMode = false
 
 	if err != nil {
-		return cf,fmt.Errorf("failed to read config file,please check:%v", err)
+		return cf, fmt.Errorf("failed to read config file,please check:%v", err)
 	}
 	return cfg, nil
 }
 
-func PrintResultInTable(heders []string,data [][]string,maxTableCellWidth int )  {
+func PrintResultInTable(headers []string, data [][]string, maxTableCellWidth int) {
 	tabulate := gotabulate.Create(data)
-	tabulate.SetHeaders(heders)
+	tabulate.SetHeaders(headers)
 	tabulate.SetAlign("center")
 	tabulate.SetMaxCellSize(maxTableCellWidth)
 	tabulate.SetWrapStrings(true)
 	fmt.Println(tabulate.Render("grid"))
 }
 
-func PrintListHosts(hosts []string,maxTableCellWidth int,groupName... string) {
-	var headers  []string
+func PrintListHosts(hosts []string, maxTableCellWidth int, groupName ...string) {
+	var headers []string
 	var data [][]string
-	headers = append(headers,"#", "Host")
+	headers = append(headers, "#", "Host")
 
 	if len(groupName) != 0 {
-		headers = append(headers,"Group Name")
+		headers = append(headers, "Group Name")
 	}
-	for i, v := range hosts {
+	todoHosts, err := DuplicateIPAddressCheck(hosts)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	for i, v := range todoHosts {
 		if len(groupName) != 0 {
-			data = append(data,[]string{strconv.Itoa(i + 1),v,groupName[0]})
+			data = append(data, []string{strconv.Itoa(i + 1), v, groupName[0]})
 		} else {
-			data = append(data,[]string{strconv.Itoa(i + 1),v})
+			data = append(data, []string{strconv.Itoa(i + 1), v})
 		}
 	}
 	ColorPrint("INFO", "", ">>> Available Hosts", ":\n")
-	PrintResultInTable(headers,data,maxTableCellWidth)
+	PrintResultInTable(headers, data, maxTableCellWidth)
 }
 
-
-func FormatErorCommandsResultWithTableStyle(res []SSHResult,maxTableCellWidth int)  {
-	var header = []string{"#", "Host", "Status"}
-	data := [][]string{}
-	for i,host := range res{
-		data = append(data,[]string{strconv.Itoa(i+1),host.Host,host.Status})
+// format result with table style, supports output of the contents of the specified column
+func FormatResultWithTableStyle(res []interface{}, maxTableCellWidth int, notIncludedFields []string) {
+	var header = []string{"#"}
+	var headerAll, headerNotInclude, headerInclude []string
+	var data [][]string
+	if len(res) > 0 {
+		iRes := res[0]
+		typeName := reflect.TypeOf(iRes)
+		if len(notIncludedFields) > 0 {
+			for i := 0; i < typeName.NumField(); i++ {
+				for _, f := range notIncludedFields {
+					if len(f) == 0 {
+						continue
+					}
+					if f == typeName.Field(i).Name {
+						headerNotInclude = append(headerNotInclude, typeName.Field(i).Name)
+					}
+				}
+				headerAll = append(headerAll, typeName.Field(i).Name)
+				headerInclude = DiffStringSlices(headerNotInclude, headerAll)
+			}
+			header = append(header, headerInclude...)
+		} else {
+			for i := 0; i < typeName.NumField(); i++ {
+				header = append(header, typeName.Field(i).Name)
+			}
+		}
 	}
-	PrintResultInTable(header,data,maxTableCellWidth)
-}
+	for i, v := range res {
+		value := reflect.ValueOf(v)
+		typeName := reflect.TypeOf(v)
+		var row []string
+		index := strconv.Itoa(i + 1)
+		row = append(row, index)
 
-func FormatResultWithTableStyle(res []SSHResult,maxTableCellWidth int)  {
-	var header = []string{"#", "Host", "Status","Result"}
-	data := [][]string{}
-	for i,host := range res{
-		data = append(data,[]string{strconv.Itoa(i+1),host.Host,host.Status,host.Result})
+		for i := 0; i < value.NumField(); i++ {
+			if len(notIncludedFields) > 0 {
+				var r []string
+				for _, f := range headerInclude {
+					if f == typeName.Field(i).Name {
+						r = append(r, value.Field(i).String())
+					} else {
+						continue
+					}
+				}
+				row = append(row, r...)
+			} else {
+				row = append(row, value.Field(i).String())
+			}
+		}
+		data = append(data, row)
 	}
-	PrintResultInTable(header,data,maxTableCellWidth)
+	PrintResultInTable(header, data, maxTableCellWidth)
 }
 
-func FormatResultWithBasicStyle(i int,res SSHResult)  {
+func FormatResultWithBasicStyle(i int, res SSHResult) {
 	ColorPrint("INFO", "", ">>> ", fmt.Sprintf("No.%d, ", i+1))
 	ColorPrint("INFO", "", "Host:", fmt.Sprintf("%s,", res.Host))
 	if res.Status == "success" {
@@ -599,7 +659,12 @@ func FormatResultWithBasicStyle(i int,res SSHResult)  {
 	ColorPrint("INFO", ", Results:\n", "", fmt.Sprintf("%s\n\n", res.Result))
 }
 
-func SFTPFormatResultWithBasicStyle(i int,res SFTPResult)  {
+func LogSSHResultToFile(i int, res SSHResult, filePath string) {
+	WriteAndAppendFile(filePath, fmt.Sprintf(">>> No.%d, Host: %s, Status: %s", i+1, res.Host, res.Status))
+	WriteAndAppendFile(filePath, fmt.Sprintf("Result: %s", res.Result))
+}
+
+func SFTPFormatResultWithBasicStyle(i int, res SFTPResult) {
 	ColorPrint("INFO", "", ">>> ", fmt.Sprintf("No.%d, ", i+1))
 	ColorPrint("INFO", "", "Host:", fmt.Sprintf("%s,", res.Host))
 	if res.Status == "success" {
@@ -611,11 +676,139 @@ func SFTPFormatResultWithBasicStyle(i int,res SFTPResult)  {
 	ColorPrint("INFO", "", " Destination Path:", fmt.Sprintf("%s,", res.DestinationPath))
 	ColorPrint("INFO", " Results:\n", "", fmt.Sprintf("%s\n\n", res.Result))
 }
-func SFTPFormatResultWithTableStyle(res []SFTPResult,maxTableCellWidth int)  {
-	var header = []string{"#", "Host", "Status","Source Path","Destination Path","Result"}
-	data := [][]string{}
-	for i,host := range res{
-		data = append(data,[]string{strconv.Itoa(i+1),host.Host,host.Status,host.SourcePath,host.DestinationPath,host.Result})
+func LogSFTPResultToFile(i int, res SFTPResult, filePath string) {
+	WriteAndAppendFile(filePath, fmt.Sprintf(">>> No.%d, Host: %s, Status: %s", i+1, res.Host, res.Status))
+	WriteAndAppendFile(filePath, fmt.Sprintf("Source Path: %s, Destination Path: %s", res.SourcePath, res.DestinationPath))
+	WriteAndAppendFile(filePath, fmt.Sprintf("Result: %s", res.Result))
+}
+
+// =============================================================
+// ResultLog format functions
+func ResultLogInfo(resultLog ResultLogs, startTime time.Time, logToFile bool, logFilePath string) {
+	endTime := time.Now()
+	resultLog.StartTime = startTime.Format("2006-01-02 15:04:05")
+	resultLog.EndTime = endTime.Format("2006-01-02 15:04:05")
+	resultLog.CostTime = endTime.Sub(startTime).String()
+	resultLog.TotalHostsInfo = fmt.Sprintf("%d(Success) + %d(Failed) = %d(Total)", len(resultLog.SuccessHosts), len(resultLog.ErrorHosts), len(resultLog.SuccessHosts)+len(resultLog.ErrorHosts))
+	if logToFile {
+		WriteAndAppendFile(logFilePath, fmt.Sprintf("Tips: process running done."))
+		WriteAndAppendFile(logFilePath, fmt.Sprintf("\nStart Time: %s\nEnd Time: %s\nCost Time: %s\nTotal Hosts Running: %s\n", resultLog.StartTime, resultLog.EndTime, resultLog.CostTime, resultLog.TotalHostsInfo))
+	} else {
+		ColorPrint("INFO", "", "Tips: ", fmt.Sprintf("Process running done.\n"))
+		fmt.Printf("Start Time: %s\nEnd Time: %s\nCost Time: %s\nTotal Hosts Running: %s\n", resultLog.StartTime, resultLog.EndTime, resultLog.CostTime, resultLog.TotalHostsInfo)
 	}
-	PrintResultInTable(header,data,maxTableCellWidth)
+}
+func FormatResultLogWithSimpleStyle(resultLog ResultLogs, startTime time.Time, maxTableCellWidth int, notIncludeTableFields []string) {
+	if len(resultLog.ErrorHosts) > 0 {
+		ColorPrint("ERROR", "", "WARNING: ", "Failed hosts, please confirm!\n")
+		FormatResultWithTableStyle(resultLog.ErrorHosts, maxTableCellWidth, notIncludeTableFields)
+	}
+	ResultLogInfo(resultLog, startTime, false, "")
+}
+
+// format result log with table style
+func FormatResultLogWithTableStyle(chs []chan interface{}, resultLog ResultLogs, startTime time.Time, maxTableCellWidth int) {
+	resultStatus := ""
+	for _, resCh := range chs {
+		result := <-resCh
+		switch reflect.TypeOf(result).String() {
+		case "utils.SSHResult":
+			resultStatus = result.(SSHResult).Status
+		case "utils.SFTPResult":
+			resultStatus = result.(SFTPResult).Status
+		}
+		if resultStatus == "failed" {
+			resultLog.ErrorHosts = append(resultLog.ErrorHosts, result)
+
+		} else {
+			resultLog.SuccessHosts = append(resultLog.SuccessHosts, result)
+		}
+	}
+
+	if len(resultLog.SuccessHosts) > 0 {
+		ColorPrint("INFO", "", "INFO: ", "Success hosts\n")
+		FormatResultWithTableStyle(resultLog.SuccessHosts, maxTableCellWidth, []string{})
+	}
+	if len(resultLog.ErrorHosts) > 0 {
+		ColorPrint("ERROR", "", "WARNING: ", "Failed hosts, please confirm!\n")
+		FormatResultWithTableStyle(resultLog.ErrorHosts, maxTableCellWidth, []string{})
+	}
+	ResultLogInfo(resultLog, startTime, false, "")
+}
+
+func GetAllResultLog(chs []chan interface{}, resultLog ResultLogs, startTime time.Time) ResultLogs {
+	resultStatus := ""
+	for _, resCh := range chs {
+		result := <-resCh
+		switch reflect.TypeOf(result).String() {
+		case "utils.SSHResult":
+			resultStatus = result.(SSHResult).Status
+		case "utils.SFTPResult":
+			resultStatus = result.(SFTPResult).Status
+		}
+		if resultStatus == "failed" {
+			resultLog.ErrorHosts = append(resultLog.ErrorHosts, result)
+
+		} else {
+			resultLog.SuccessHosts = append(resultLog.SuccessHosts, result)
+		}
+	}
+	endTime := time.Now()
+	resultLog.StartTime = startTime.Format("2006-01-02 15:04:05")
+	resultLog.EndTime = endTime.Format("2006-01-02 15:04:05")
+	resultLog.CostTime = endTime.Sub(startTime).String()
+	resultLog.TotalHostsInfo = fmt.Sprintf("%d(Success) + %d(Failed) = %d(Total)", len(resultLog.SuccessHosts), len(resultLog.ErrorHosts), len(resultLog.SuccessHosts)+len(resultLog.ErrorHosts))
+
+	return resultLog
+}
+
+// format result log with json style
+func FormatResultToJson(logs []ResultLogs, isJsonRaw bool) {
+	b, err := json.Marshal(logs)
+	if err != nil {
+		fmt.Println("json err:", err)
+		return
+	}
+	if isJsonRaw != false {
+		fmt.Println(string(b))
+		return
+	}
+	var out bytes.Buffer
+	err = json.Indent(&out, b, "", "    ")
+	if err != nil {
+		fmt.Println("Json Format ERROR:", err)
+	}
+	out.WriteTo(os.Stdout)
+	return
+}
+func FormatResultLogWithJsonStyle(chs []chan interface{}, resultLog ResultLogs, startTime time.Time, isJsonRaw bool) {
+	var allResultLog []ResultLogs
+	resLog := GetAllResultLog(chs, resultLog, startTime)
+	allResultLog = append(allResultLog, resLog)
+	FormatResultToJson(allResultLog, isJsonRaw)
+	return
+}
+
+func WriteAndAppendFile(filePath, strContent string) {
+	strTime := GetCurrentDateNumbers
+	if filePath == "log" {
+		filePath = fmt.Sprintf("ssgo-%s.log", strTime)
+	}
+	f, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		fmt.Println("ERROR: write file failed:", err)
+		return
+	}
+	appendTime := time.Now().Format("2006-01-02 15:04:05")
+	fileContent := strings.Join([]string{appendTime, strContent, "\n"}, " ")
+	buf := []byte(fileContent)
+	f.Write(buf)
+	f.Close()
+}
+
+func GetCurrentDateNumbers() (strTime string) {
+	currTime := time.Now()
+	strFormatTime := currTime.Format("2006-01-02")
+	strTime = strings.Replace(strFormatTime, "-", "", -1)
+	return
 }
