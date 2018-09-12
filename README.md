@@ -8,9 +8,9 @@ go get github.com/JeffreySE/ssgo
 ## 打包下载最新版本
 
 * **For Windows x64**:   
-    [ssgo.1.0.2.zip](https://github.com/JeffreySE/ssgo/files/1955413/ssgo.1.0.2.zip)
+    [ssgo.1.0.3.zip](https://github.com/JeffreySE/ssgo/files/2371010/ssgo.1.0.3.zip)
 * **For Linux x64**:   
-    [ssgo.1.0.2.tar.gz](https://github.com/JeffreySE/ssgo/files/1955414/ssgo.1.0.2.tar.gz)   
+    [ssgo.1.0.3.tar.gz](https://github.com/JeffreySE/ssgo/files/2371009/ssgo.1.0.3.tar.gz)   
 
 ## 小特性
 * 默认并发执行
